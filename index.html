@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Markov Chain Text Playground</title>
+  <title>Markov Chain ⟳ Text Playground</title>
   <style>
     body { font-family: sans-serif; padding: 20px; }
     textarea, input[type="range"], input[type="number"] { width: 100%; margin-bottom: 10px; }
@@ -10,19 +10,54 @@
     .flex-row { display: flex; gap: 10px; align-items: center; }
     .flex-row input[type="number"] { width: 100%; max-width: 150px; }
     label span { font-weight: bold; }
+    .button-container {
+      text-align: right;
+    }
+    .toggle-container {
+      margin-bottom: 10px;
+    }
+    .controls-container {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .controls-container .toggle-container {
+      display: flex;
+      gap: 10px;
+    }
+    .controls-container .button-container {
+      display: flex;
+      gap: 10px;
+    }
   </style>
 </head>
 <body>
-  <h1>Markov Chain Text Playground</h1>
+  <h1>Markov Chain ⟳ Text Playground</h1>
 
   <label for="inputText">Input Text:</label>
   <textarea id="inputText" rows="10" placeholder="Paste your text here..."></textarea>
+  
+  <div class="controls-container">
+    <div class="toggle-container">
+      <label>
+        <input type="radio" name="mode" value="character" checked /> Next-character
+      </label>
+      <label>
+        <input type="radio" name="mode" value="word" /> Next-word
+      </label>
+    </div>
+    <div class="button-container">
+      <button id="removeLineBreaks">✂️ Breaks</button>  
+      <button id="removeExtraSpaces">✂️ Spaces</button>
+    </div>
+  </div>
 
   <label for="order">Order: <span id="orderValue">1</span></label>
   <input type="range" id="order" min="1" max="8" value="1" />
 
-  <label for="length">Output Length (words): <span id="lengthValue">100</span></label>
-  <input type="range" id="length" min="1" max="1000" value="100" />
+  <label for="length">Output Length: <span id="lengthValue">100</span></label>
+  <input type="range" id="length" min="1" max="10000" value="100" />
 
   <label>Seed:</label>
   <div class="flex-row">
@@ -36,6 +71,16 @@
   <div id="output"></div>
 
   <script>
+    document.getElementById('removeLineBreaks').addEventListener('click', function() {
+      const inputText = document.getElementById('inputText');
+      inputText.value = inputText.value.replace(/(\r\n|\n|\r)/gm, " ");
+    });
+
+    document.getElementById('removeExtraSpaces').addEventListener('click', function() {
+      const inputText = document.getElementById('inputText');
+      inputText.value = inputText.value.replace(/\s+/g, ' ').trim();
+    });
+  
     function mulberry32(seed) {
       return function() {
         let t = (seed += 0x6D2B79F5);
@@ -45,41 +90,55 @@
       };
     }
 
-    function buildMarkovChain(text, order) {
+    function buildMarkovChain(text, order, mode) {
       const chain = {};
-      for (let i = 0; i < text.length - order; i++) {
-        const key = text.substring(i, i + order);
-        const next = text.charAt(i + order);
+      const tokens = mode === 'word' ? text.trim().split(/\s+/) : text.split('');
+      if (tokens.length <= order) {
+        console.warn("Not enough tokens to build the chain. Tokens:", tokens);
+        return chain; // Handle edge case: not enough tokens
+      }
+
+      for (let i = 0; i <= tokens.length - order; i++) {
+        const key = tokens.slice(i, i + order).join(mode === 'word' ? ' ' : '');
+        const next = tokens[i + order];
         if (!chain[key]) chain[key] = [];
         chain[key].push(next);
       }
+
+      console.log("Markov Chain built:", chain);
       return chain;
     }
 
-    function generateFromChain(chain, order, wordCount = 100, seed = 42) {
+    function generateFromChain(chain, order, count = 100, seed = 42, mode = 'character') {
       const keys = Object.keys(chain);
-      if (keys.length === 0) return "";
+      if (keys.length === 0) {
+        console.warn("Empty Markov Chain. Cannot generate text.");
+        return ""; // Handle edge case: empty chain
+      }
 
       const rand = mulberry32(seed);
       let key = keys[Math.floor(rand() * keys.length)];
-      let result = key;
-      let wordCounter = key.trim().split(/\s+/).length;
+      let result = mode === 'word' ? key.split(' ') : key.split('');
+      let counter = result.length;
 
-      while (wordCounter < wordCount) {
-        const nextChars = chain[key];
-        if (!nextChars) {
+      console.log("Starting generation with key:", key);
+
+      while (counter < count) {
+        const nextTokens = chain[key];
+        if (!nextTokens) {
+          console.warn("No next tokens for key:", key);
           key = keys[Math.floor(rand() * keys.length)];
-          result += ' ';
           continue;
         }
 
-        const nextChar = nextChars[Math.floor(rand() * nextChars.length)];
-        result += nextChar;
-        key = result.slice(-order);
-        wordCounter = result.trim().split(/\s+/).length;
+        const nextToken = nextTokens[Math.floor(rand() * nextTokens.length)];
+        result.push(nextToken);
+        key = result.slice(-order).join(mode === 'word' ? ' ' : '');
+        counter = result.length;
       }
 
-      return result;
+      console.log("Generated result:", result);
+      return mode === 'word' ? result.join(' ') : result.join('');
     }
 
     function generateText() {
@@ -87,14 +146,18 @@
       const order = parseInt(document.getElementById('order').value, 10);
       const length = parseInt(document.getElementById('length').value, 10);
       const seed = parseInt(document.getElementById('seedBox').value, 10);
+      const mode = document.querySelector('input[name="mode"]:checked').value;
 
-      if (!text || isNaN(order) || isNaN(length) || isNaN(seed)) return;
+      if (!text || isNaN(order) || isNaN(length) || isNaN(seed)) {
+        console.warn("Invalid input parameters. Text:", text, "Order:", order, "Length:", length, "Seed:", seed);
+        return;
+      }
 
       document.getElementById('seedValue').textContent = seed;
 
-      const chain = buildMarkovChain(text, order);
-      const generated = generateFromChain(chain, order, length, seed);
-      document.getElementById('output').textContent = generated;
+      const chain = buildMarkovChain(text, order, mode);
+      const generated = generateFromChain(chain, order, length, seed, mode);
+      document.getElementById('output').textContent = generated || "No output generated.";
     }
 
     const inputText = document.getElementById('inputText');
@@ -131,6 +194,10 @@
       seedSlider.value = Math.floor(val / 4294967.295);
       document.getElementById('seedValue').textContent = val;
       generateText();
+    });
+
+    document.querySelectorAll('input[name="mode"]').forEach(radio => {
+      radio.addEventListener('change', generateText);
     });
   </script>
 </body>
