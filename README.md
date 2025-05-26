@@ -1,4 +1,4 @@
-#### ***Markov Chain ⟳ Text Playground***
+#### ***Markov Chain 🥨 Text Playground***
 ##### **Gabriele de Seta**
 ###### HTML, JavaScript
 
