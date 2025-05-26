@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Markov Chain ⟳ Text Playground</title>
+  <title>Markov Chain 🥨 Text Playground</title>
   <style>
     body { font-family: sans-serif; padding: 20px; }
     textarea, input[type="range"], input[type="number"] { width: 100%; margin-bottom: 10px; }
@@ -30,10 +30,18 @@
       display: flex;
       gap: 10px;
     }
+    .generated-text-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .generated-text-header button {
+      margin-left: auto;
+    }
   </style>
 </head>
 <body>
-  <h1>Markov Chain ⟳ Text Playground</h1>
+  <h1>Markov Chain 🥨 Text Playground</h1>
 
   <label for="inputText">Input Text:</label>
   <textarea id="inputText" rows="10" placeholder="Paste your text here..."></textarea>
@@ -50,16 +58,20 @@
     <div class="button-container">
       <button id="removeLineBreaks">✂️ Breaks</button>  
       <button id="removeExtraSpaces">✂️ Spaces</button>
+      <button id="clearInput">🗑️ Clear</button>
     </div>
   </div>
 
-  <label for="order">Order: <span id="orderValue">1</span></label>
+  <label for="order">📊 Order: <span id="orderValue">1</span></label>
   <input type="range" id="order" min="1" max="8" value="1" />
 
-  <label for="length">Output Length: <span id="lengthValue">100</span></label>
+  <label for="temperature">🌡️ Temperature: <span id="temperatureValue">1.0</span></label>
+  <input type="range" id="temperature" min="0.1" max="2.0" step="0.1" value="1.0" />
+
+  <label for="length">📏 Output Length: <span id="lengthValue">100</span></label>
   <input type="range" id="length" min="1" max="10000" value="100" />
 
-  <label>Seed:</label>
+  <label>🧮 Seed:</label>
   <div class="flex-row">
     <input type="range" id="seed" min="0" max="1000" value="42" />
     <input type="number" id="seedBox" min="0" max="4294967295" value="180000000" />
@@ -67,7 +79,10 @@
 
   <label for="seedBox">Seed Value: <span id="seedValue">42</span></label>
 
-  <h2>Generated Text:</h2>
+  <h2 class="generated-text-header">
+    Generated Text:
+    <button id="copyOutput">📋 Copy</button>
+  </h2>
   <div id="output"></div>
 
   <script>
@@ -109,7 +124,13 @@
       return chain;
     }
 
-    function generateFromChain(chain, order, count = 100, seed = 42, mode = 'character') {
+    function applyTemperature(probabilities, temperature) {
+      const adjusted = probabilities.map(p => Math.pow(p, 1 / temperature));
+      const sum = adjusted.reduce((a, b) => a + b, 0);
+      return adjusted.map(p => p / sum);
+    }
+
+    function generateFromChain(chain, order, count = 100, seed = 42, mode = 'character', temperature = 1.0) {
       const keys = Object.keys(chain);
       if (keys.length === 0) {
         console.warn("Empty Markov Chain. Cannot generate text.");
@@ -131,7 +152,16 @@
           continue;
         }
 
-        const nextToken = nextTokens[Math.floor(rand() * nextTokens.length)];
+        const probabilities = nextTokens.map(() => rand());
+        const adjustedProbabilities = applyTemperature(probabilities, temperature);
+        const cumulative = adjustedProbabilities.reduce((acc, p, i) => {
+          acc.push((acc[i - 1] || 0) + p);
+          return acc;
+        }, []);
+        const randomValue = rand();
+        const nextTokenIndex = cumulative.findIndex(c => c > randomValue);
+
+        const nextToken = nextTokens[nextTokenIndex];
         result.push(nextToken);
         key = result.slice(-order).join(mode === 'word' ? ' ' : '');
         counter = result.length;
@@ -146,18 +176,20 @@
       const order = parseInt(document.getElementById('order').value, 10);
       const length = parseInt(document.getElementById('length').value, 10);
       const seed = parseInt(document.getElementById('seedBox').value, 10);
+      const temperature = parseFloat(document.getElementById('temperature').value);
       const mode = document.querySelector('input[name="mode"]:checked').value;
 
-      if (!text || isNaN(order) || isNaN(length) || isNaN(seed)) {
-        console.warn("Invalid input parameters. Text:", text, "Order:", order, "Length:", length, "Seed:", seed);
+      if (!text || isNaN(order) || isNaN(length) || isNaN(seed) || isNaN(temperature)) {
+        console.warn("Invalid input parameters. Text:", text, "Order:", order, "Length:", length, "Seed:", seed, "Temperature:", temperature);
         return;
       }
 
       document.getElementById('seedValue').textContent = seed;
+      document.getElementById('temperatureValue').textContent = temperature.toFixed(1);
 
       const chain = buildMarkovChain(text, order, mode);
-      const generated = generateFromChain(chain, order, length, seed, mode);
-      document.getElementById('output').textContent = generated || "No output generated.";
+      const generated = generateFromChain(chain, order, length, seed, mode, temperature);
+      document.getElementById('output').textContent = generated || "No input text! Paste something in the field above. Longer texts work better.";
     }
 
     const inputText = document.getElementById('inputText');
@@ -167,6 +199,8 @@
     const lengthValue = document.getElementById('lengthValue');
     const seedSlider = document.getElementById('seed');
     const seedBox = document.getElementById('seedBox');
+    const temperatureSlider = document.getElementById('temperature');
+    const temperatureValue = document.getElementById('temperatureValue');
 
     orderSlider.addEventListener('input', () => {
       orderValue.textContent = orderSlider.value;
@@ -196,8 +230,31 @@
       generateText();
     });
 
+    temperatureSlider.addEventListener('input', () => {
+      temperatureValue.textContent = temperatureSlider.value;
+      generateText();
+    });
+
     document.querySelectorAll('input[name="mode"]').forEach(radio => {
       radio.addEventListener('change', generateText);
+    });
+
+    document.getElementById('copyOutput').addEventListener('click', function() {
+      const output = document.getElementById('output').textContent;
+      if (output) {
+        navigator.clipboard.writeText(output).then(() => {
+          alert('Generated text copied to clipboard!');
+        }).catch(err => {
+          console.error('Failed to copy text: ', err);
+        });
+      } else {
+        alert('No text to copy!');
+      }
+    });
+
+    document.getElementById('clearInput').addEventListener('click', function() {
+      document.getElementById('inputText').value = '';
+      generateText(); // Update the output to reflect the cleared input
     });
   </script>
 </body>
